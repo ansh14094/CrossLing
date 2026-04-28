@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import os
 from typing import Any
 
@@ -36,6 +37,15 @@ def train_lid(config: dict[str, Any], data_path: str | None = None) -> LIDModel:
 
     collator = DataCollatorForTokenClassification(model.tokenizer)
 
+    def get_warmup_steps(cfg: dict[str, Any], train_ds: Any) -> int | None:
+        if cfg.get("warmup_steps") is not None:
+            return cfg["warmup_steps"]
+        ratio = cfg.get("warmup_ratio")
+        if ratio is None:
+            return None
+        total_steps = math.ceil(len(train_ds) / cfg["batch_size"]) * cfg["epochs"]
+        return int(total_steps * ratio)
+
     def compute_metrics(eval_pred) -> dict[str, float]:
         logits, labels = eval_pred
         preds = np.argmax(logits, axis=-1)
@@ -49,7 +59,7 @@ def train_lid(config: dict[str, Any], data_path: str | None = None) -> LIDModel:
         per_device_eval_batch_size=cfg["batch_size"],
         learning_rate=cfg["lr"],
         weight_decay=cfg["weight_decay"],
-        warmup_ratio=cfg["warmup_ratio"],
+        warmup_steps=get_warmup_steps(cfg, train_ds),
         eval_strategy="epoch",
         save_strategy="epoch",
         save_total_limit=1,

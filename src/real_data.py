@@ -77,15 +77,6 @@ NORM_PATHS = {
 def _iter_sentimix_sentences(rows: Iterable[dict],
                              id_to_label: dict[str, str] | None = None
                              ) -> Iterable[tuple[str, list[tuple[str, str]]]]:
-    """Walk row-per-line SentiMix rows -> (label, [(token, lang_label), ...]).
-
-    The HF dataset stores each CoNLL line as a row whose ``text`` field is
-    either ``meta\\tID\\tLABEL`` (train/val), ``meta\\tID`` (test — labels
-    live in a separate CSV answer key shipped at the top of the split),
-    ``token\\tlang``, or empty (sentence separator).
-
-    Pass ``id_to_label`` to provide labels for ``meta\\tID``-only rows.
-    """
     label: str | None = None
     tokens: list[tuple[str, str]] = []
     for row in rows:
@@ -125,7 +116,7 @@ def _extract_sentimix_test_answer_key(rows: Iterable[dict]) -> dict[str, str]:
         if not stripped:
             continue
         if stripped.lower().startswith("uid,"):
-            continue  # header
+            continue
         if "," in stripped and "\t" not in stripped:
             uid, _, label = stripped.partition(",")
             uid = uid.strip()
@@ -133,19 +124,15 @@ def _extract_sentimix_test_answer_key(rows: Iterable[dict]) -> dict[str, str]:
             if uid and label and uid.isdigit():
                 answers[uid] = label
             continue
-        # First non-CSV row -> answer key is finished.
         break
     return answers
+
 
 
 def _write_sentimix_split(rows: Iterable[dict],
                           tsv_path: str, conll_path: str,
                           id_to_label: dict[str, str] | None = None
                           ) -> tuple[int, Counter]:
-    """Write a (sentiment TSV, LID CoNLL) pair from SentiMix rows.
-
-    Returns ``(n_sentences, label_counts)`` for the report log.
-    """
     os.makedirs(os.path.dirname(tsv_path), exist_ok=True)
     n = 0
     labels: Counter = Counter()
@@ -167,8 +154,14 @@ def _write_sentimix_split(rows: Iterable[dict],
     return n, labels
 
 
+
 def download_sentimix(*, force: bool = False) -> dict[str, int]:
-    """Pull RTT1/SentiMix and convert each split."""
+    """Pull RTT1/SentiMix and convert each split.
+    
+    Note: The public SentiMix dataset does not include sentiment labels for
+    the test split (it's a held-out competition dataset). The test.tsv and
+    test.conll files will be empty. Use train + validation splits instead.
+    """
     from datasets import load_dataset
 
     if (not force
@@ -193,17 +186,24 @@ def download_sentimix(*, force: bool = False) -> dict[str, int]:
         # ("Uid,Sentiment"); the train/val splits inline the label on the
         # meta line. _extract_sentimix_test_answer_key returns {} when the
         # CSV prefix isn't present, so the call is safe for all splits.
-        id_to_label = _extract_sentimix_test_answer_key(ds[hf_split])
+        # Materialize to list so we can iterate twice (once for answer key, once for data).
+        split_data = list(ds[hf_split])
+        id_to_label = _extract_sentimix_test_answer_key(split_data)
         n, label_dist = _write_sentimix_split(
-            ds[hf_split],
+            split_data,
             SENTIMIX_PATHS[tsv_key],
             SENTIMIX_PATHS[conll_key],
             id_to_label=id_to_label,
         )
         counts[hf_split] = n
-        print(f"[real_data]   sentimix {hf_split}: {n} sentences  "
-              f"labels={dict(label_dist)}")
+        if n == 0 and hf_split == "test":
+            print(f"[real_data]   sentimix {hf_split}: 0 sentences (no labels in "
+                  f"public dataset — this is expected for held-out test splits)")
+        else:
+            print(f"[real_data]   sentimix {hf_split}: {n} sentences  "
+                  f"labels={dict(label_dist)}")
     return counts
+
 
 
 # --------------------------------------------------------------------------- #
