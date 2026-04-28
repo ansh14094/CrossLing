@@ -1,0 +1,42 @@
+project: CrossLing
+seed: 42
+device: auto  # auto | cpu | cuda | mps
+
+# Defaults below are tuned for a single mid-range CUDA GPU (e.g. T4 / 3090 /
+# A4000, ~16-24 GB VRAM). On MPS / CPU they will OOM or be too slow — use
+# `python -m scripts.train_full --device mps --light` or set --quick on the
+# per-component scripts to switch to laptop-friendly batch sizes.
+
+lid:
+  backbone: xlm-roberta-base
+  labels: [ENG, HIN, OTHER, NE]
+  max_length: 128
+  batch_size: 32
+  lr: 2.0e-5
+  epochs: 3
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+  output_dir: checkpoints/lid
+
+sentiment:
+  backbone: xlm-roberta-base
+  labels: [NEGATIVE, NEUTRAL, POSITIVE]
+  max_length: 128
+  batch_size: 32
+  lr: 2.0e-5
+  epochs: 3
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+  output_dir: checkpoints/sentiment
+
+normalizer:
+  backbone: google/mt5-small
+  max_source_length: 96
+  max_target_length: 96
+  batch_size: 16
+  lr: 5.0e-4
+  epochs: 3
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+  output_dir: checkpoints/normalizer
+  source_prefix: "translate hinglish to english: "
