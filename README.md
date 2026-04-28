@@ -109,11 +109,6 @@ python -m scripts.evaluate --backend neural --max 0 --out reports/eval_neural.md
 python -m scripts.analyze "yeh movi bakwaaaas h brooo!!!"
 ```
 
-Wall time on a single GPU:
-- A100 / H100: ~10-15 min
-- 3090 / 4090: ~15-25 min
-- T4 / V100: ~25-45 min
-
 Trains XLM-R for LID + sentiment, mT5-small for translation. Mixed precision
 auto-selected (bf16 on Ampere+, fp16 on older CUDA, fp32 otherwise; mT5 is
 forced to bf16 or fp32 because fp16 is unstable for it).
@@ -185,49 +180,6 @@ python -m scripts.evaluate --max 0                                # use entire e
 python -m scripts.evaluate --out reports/run1.md                  # custom output path
 ```
 
-The Markdown report covers:
-
-- **Sentiment**: accuracy + macro-F1 + weighted-F1 + per-class report
-- **LID**: token-level accuracy + macro-F1 + weighted-F1 + per-class report
-  (token alignment with gold is exact, no whitespace re-tokenisation drift)
-- **Normalizer**: corpus BLEU + chrF on the held-out parallel test pairs
-- **Code-switching profile of the eval set**: CMI mean/median, switch fraction,
-  code-mixed share, CMI buckets, dominant-language histogram. Tells you
-  what kind of code-mixing the eval set actually contains.
-- **Robustness slice**: sentiment metrics restricted to noisy inputs (any
-  preprocessor edit fired) vs. clean inputs — quantifies how much
-  elongations / slang / punctuation runs hurt the model.
-- **5 worked examples**: full reports with token importance for spot-checking.
-
-### Backend comparison (SentiMix validation, n=500)
-
-| Metric                       | rule-based | pretrained | neural (1-epoch GPU) |
-|------------------------------|-----------:|-----------:|---------------------:|
-| Sentiment accuracy           |       0.47 |   **0.63** | *fill in after eval* |
-| Sentiment macro-F1           |       0.39 |   **0.63** | *fill in after eval* |
-| LID token accuracy           |       0.54 |   **0.89** | *fill in after eval* |
-| LID macro-F1                 |       0.46 |   **0.90** | *fill in after eval* |
-| Normalizer BLEU              |          — |          — |              **58.4** |
-| Normalizer chrF              |          — |          — |              **76.1** |
-
-The rule-based numbers are a proof-of-life floor. The pretrained backend
-closes most of the gap zero-shot. The neural backend (after `train_full`
-on GPU) is the production target.
-
-## GPU training tuning flags
-
-| Flag                                    | Effect |
-|-----------------------------------------|--------|
-| `--device cuda\|mps\|cpu`               | Override device auto-detection |
-| `--light`                               | Laptop / 8 GB-VRAM defaults |
-| `--epochs N`                            | Override epochs for all three |
-| `--lid-batch / --sent-batch / --norm-batch N` | Per-component batch overrides |
-| `--norm-len N`                          | Max source/target length for the normalizer (default 96) |
-| `--skip lid sentiment`                  | Only train the normalizer (etc.) |
-
-If `CUDA out of memory` on the normalizer: `--norm-batch 4 --norm-len 64`.
-On the classifiers: `--lid-batch 16 --sent-batch 16`.
-
 ## Code-switching analytics
 
 Beyond per-token language tags, every report carries the quantitative
@@ -266,32 +218,6 @@ Tests at `tests/test_robustness.py` lock in:
 - SentiMix / LINCE label remapping
 - end-to-end report shape on noisy inputs
 
-## Programmatic API
-
-```python
-from src.analyzer import HinglishAnalyzer
-
-analyzer = HinglishAnalyzer.from_config()                     # auto-detect backend
-report = analyzer.analyze("yeh movi bakwaaaas h brooo!!!")
-
-print(report.pretty())                                        # human-readable
-report.to_dict()                                              # JSON-ready dict
-
-# fields:
-report.text                  # raw input
-report.cleaned               # post-preprocessing
-report.preprocessing_edits   # list of cleanup operations applied
-report.tokens                # whitespace tokens
-report.language_tags         # ['HIN', 'ENG', ...] aligned with tokens
-report.code_switch           # {'cmi': 20.0, 'switch_count': 2, ...}
-report.normalized            # English translation
-report.sentiment             # 'NEGATIVE'
-report.sentiment_score       # 0.91
-report.sentiment_scores      # {'POSITIVE': 0.04, 'NEGATIVE': 0.91, 'NEUTRAL': 0.05}
-report.token_importance      # [{'token': 'bakwaas', 'importance': 0.62}, ...]
-report.summary               # one-paragraph human summary
-```
-
 ## Tests
 
 ```bash
@@ -300,14 +226,3 @@ python -m unittest tests.test_pipeline tests.test_robustness   # 26 tests
 
 Covers data loaders, metrics, tokenization, code-switch metrics, and the
 text-normalisation preprocessor.
-
-## License / credits
-
-Datasets used:
-
-- `RTT1/SentiMix` — SemEval-2020 Task 9 Hinglish twitter (Patwa et al. 2020)
-- `findnitai/english-to-hinglish` — English-Hinglish parallel corpus
-- `cardiffnlp/twitter-xlm-roberta-base-sentiment` — multilingual twitter
-  sentiment baseline (Barbieri et al. 2022)
-
-Code: see repository LICENSE.
